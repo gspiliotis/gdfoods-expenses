@@ -39,7 +39,7 @@ The application is available as a Docker container and is automatically built an
 #### Pull from GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/yourusername/expenses:latest
+docker pull ghcr.io/gspiliotis/expenses:latest
 ```
 
 #### Or build locally:
@@ -146,7 +146,7 @@ docker run --rm \
   -e MYDATA_API_KEY="your_api_key" \
   -e GOOGLE_SPREADSHEET_ID="your_spreadsheet_id" \
   -e GOOGLE_CREDENTIALS_FILE="/app/google-credentials.json" \
-  ghcr.io/yourusername/expenses:latest
+  ghcr.io/gspiliotis/expenses:latest
 ```
 
 #### Fetch invoices for a specific date range with Docker:
@@ -158,7 +158,7 @@ docker run --rm \
   -e MYDATA_API_KEY="your_api_key" \
   -e GOOGLE_SPREADSHEET_ID="your_spreadsheet_id" \
   -e GOOGLE_CREDENTIALS_FILE="/app/google-credentials.json" \
-  ghcr.io/yourusername/expenses:latest \
+  ghcr.io/gspiliotis/expenses:latest \
   --from-date 2025-01-01 \
   --to-date 2025-01-31
 ```
@@ -173,7 +173,7 @@ docker run --rm \
   -e MYDATA_API_KEY="your_api_key" \
   -e GOOGLE_SPREADSHEET_ID="your_spreadsheet_id" \
   -e GOOGLE_CREDENTIALS_FILE="/app/google-credentials.json" \
-  ghcr.io/yourusername/expenses:latest \
+  ghcr.io/gspiliotis/expenses:latest \
   --vat-file vat_numbers.txt
 ```
 
@@ -185,7 +185,7 @@ Create a `.env` file with your credentials and use it with Docker:
 docker run --rm \
   -v $(pwd)/google-credentials.json:/app/google-credentials.json \
   --env-file .env \
-  ghcr.io/yourusername/expenses:latest \
+  ghcr.io/gspiliotis/expenses:latest \
   --from-date 2025-01-01 \
   --to-date 2025-01-31
 ```
@@ -267,9 +267,9 @@ Published images are tagged with:
 After the workflow runs successfully, you can pull the image:
 
 ```bash
-docker pull ghcr.io/yourusername/expenses:latest
-docker pull ghcr.io/yourusername/expenses:main
-docker pull ghcr.io/yourusername/expenses:main-abc1234
+docker pull ghcr.io/gspiliotis/expenses:latest
+docker pull ghcr.io/gspiliotis/expenses:main
+docker pull ghcr.io/gspiliotis/expenses:main-abc1234
 ```
 
 ### Setting up the Workflow
