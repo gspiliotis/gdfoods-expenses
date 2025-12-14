@@ -1,0 +1,8 @@
+# VAT numbers to fetch expenses for
+# Lines starting with # are comments
+# Format: One VAT number per line
+
+094254743
+998117733
+998603201
+095283785
