@@ -52,7 +52,7 @@ def convert_date_to_api_format(date_str: str) -> str:
 def fetch_invoices(
     date_from: str,
     date_to: str,
-    receiver_vat_number: str,
+    receiver_vat_number: Optional[str] = None,
     next_partition_key: Optional[str] = None,
     next_row_key: Optional[str] = None
 ) -> str:
@@ -62,7 +62,7 @@ def fetch_invoices(
     Args:
         date_from: Start date in YYYY-MM-DD format
         date_to: End date in YYYY-MM-DD format
-        receiver_vat_number: VAT number of the receiver
+        receiver_vat_number: VAT number of the receiver (optional, if not provided fetches all)
         next_partition_key: Pagination key for next partition
         next_row_key: Pagination key for next row
 
@@ -76,9 +76,12 @@ def fetch_invoices(
     params = {
         "mark": "1",
         "dateFrom": api_date_from,
-        "dateTo": api_date_to,
-        "receiverVatNumber": receiver_vat_number
+        "dateTo": api_date_to
     }
+
+    # Only add receiverVatNumber if provided
+    if receiver_vat_number:
+        params["receiverVatNumber"] = receiver_vat_number
 
     if next_partition_key:
         params["nextPartitionKey"] = next_partition_key
@@ -157,6 +160,13 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
         issuer_vat = issuer_vat_elem.text.strip() if issuer_vat_elem is not None and issuer_vat_elem.text else ""
         issuer_name = issuer_name_elem.text.strip() if issuer_name_elem is not None and issuer_name_elem.text else ""
 
+        # Get counterpart (receiver) information
+        counterpart = invoice.find("ns:counterpart", ns)
+        receiver_vat = ""
+        if counterpart is not None:
+            receiver_vat_elem = counterpart.find("ns:vatNumber", ns)
+            receiver_vat = receiver_vat_elem.text.strip() if receiver_vat_elem is not None and receiver_vat_elem.text else ""
+
         # Get invoice header
         invoice_header = invoice.find("ns:invoiceHeader", ns)
         if invoice_header is None:
@@ -202,7 +212,8 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
                 "series": series,
                 "aa": aa,
                 "payment_methods": payment_methods_str,
-                "total_amount": total_amount
+                "total_amount": total_amount,
+                "receiver_vat": receiver_vat
             })
 
     return records, next_partition_key, next_row_key
@@ -210,51 +221,60 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
 
 def fetch_all_invoices(date_from: str, date_to: str, vat_numbers: List[str]) -> List[Dict]:
     """
-    Fetch all invoices for multiple VAT numbers with pagination.
+    Fetch all invoices for a date range and filter by VAT numbers locally.
 
     Args:
         date_from: Start date in YYYY-MM-DD format
         date_to: End date in YYYY-MM-DD format
-        vat_numbers: List of VAT numbers
+        vat_numbers: List of VAT numbers to filter by
 
     Returns:
-        List of all invoice records
+        List of filtered invoice records
     """
+    # Convert VAT numbers list to a set for faster lookup and strip whitespace
+    vat_set = {vat.strip() for vat in vat_numbers if vat.strip()}
+
+    print(f"Fetching all invoices for date range (single API call)")
+    print(f"Will filter results for {len(vat_set)} VAT number(s)")
+
     all_records = []
+    next_partition_key = None
+    next_row_key = None
+    page = 1
 
-    for vat_number in vat_numbers:
-        vat_number = vat_number.strip()
-        if not vat_number:
-            continue
+    # Fetch all invoices without VAT filter
+    while True:
+        xml_content = fetch_invoices(
+            date_from, date_to,
+            receiver_vat_number=None,  # No VAT filter in API call
+            next_partition_key=next_partition_key,
+            next_row_key=next_row_key
+        )
 
-        print(f"Fetching invoices for VAT: {vat_number}")
+        if not xml_content:
+            break
 
-        next_partition_key = None
-        next_row_key = None
-        page = 1
+        records, next_partition_key, next_row_key = parse_invoices(xml_content)
+        all_records.extend(records)
 
-        while True:
-            xml_content = fetch_invoices(
-                date_from, date_to, vat_number,
-                next_partition_key, next_row_key
-            )
+        print(f"  Page {page}: Fetched {len(records)} invoice(s)")
+        page += 1
 
-            if not xml_content:
-                break
+        # If no pagination tokens, we're done
+        if not next_partition_key or not next_row_key:
+            break
 
-            records, next_partition_key, next_row_key = parse_invoices(xml_content)
-            all_records.extend(records)
+    print(f"\nTotal invoices fetched: {len(all_records)}")
 
-            print(f"  Page {page}: Found {len(records)} invoice(s)")
-            page += 1
+    # Filter records by receiver VAT numbers
+    filtered_records = [
+        record for record in all_records
+        if record.get("receiver_vat", "").strip() in vat_set
+    ]
 
-            # If no pagination tokens, we're done with this VAT number
-            if not next_partition_key or not next_row_key:
-                break
+    print(f"Filtered to {len(filtered_records)} invoice(s) matching the VAT numbers")
 
-        print(f"  Total invoices for {vat_number}: {len([r for r in all_records[-100:] if True])}")
-
-    return all_records
+    return filtered_records
 
 
 def read_vat_numbers(filename: str) -> List[str]:
