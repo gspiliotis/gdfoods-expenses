@@ -266,10 +266,10 @@ def fetch_all_invoices(date_from: str, date_to: str, vat_numbers: List[str]) -> 
 
     print(f"\nTotal invoices fetched: {len(all_records)}")
 
-    # Filter records by receiver VAT numbers
+    # Filter records by issuer VAT numbers
     filtered_records = [
         record for record in all_records
-        if record.get("receiver_vat", "").strip() in vat_set
+        if record.get("vat", "").strip() in vat_set
     ]
 
     print(f"Filtered to {len(filtered_records)} invoice(s) matching the VAT numbers")
