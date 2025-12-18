@@ -6,7 +6,7 @@ import argparse
 import os
 import sys
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import requests
 from dotenv import load_dotenv
@@ -432,8 +432,18 @@ def main():
         help="Start date in YYYY-MM-DD format (default: today)"
     )
     parser.add_argument(
+        "--from-date-offset",
+        type=int,
+        help="Number of days to add/subtract from the start date (can be negative)"
+    )
+    parser.add_argument(
         "--to-date",
         help="End date in YYYY-MM-DD format (default: today)"
+    )
+    parser.add_argument(
+        "--to-date-offset",
+        type=int,
+        help="Number of days to add/subtract from the end date (can be negative)"
     )
     parser.add_argument(
         "--vat-file",
@@ -452,6 +462,18 @@ def main():
     today = datetime.now().strftime("%Y-%m-%d")
     date_from = args.from_date if args.from_date else today
     date_to = args.to_date if args.to_date else today
+
+    # Apply offset to from_date if provided
+    if args.from_date_offset is not None:
+        from_date_obj = datetime.strptime(date_from, "%Y-%m-%d")
+        from_date_obj = from_date_obj + timedelta(days=args.from_date_offset)
+        date_from = from_date_obj.strftime("%Y-%m-%d")
+
+    # Apply offset to to_date if provided
+    if args.to_date_offset is not None:
+        to_date_obj = datetime.strptime(date_to, "%Y-%m-%d")
+        to_date_obj = to_date_obj + timedelta(days=args.to_date_offset)
+        date_to = to_date_obj.strftime("%Y-%m-%d")
 
     # Validate dates
     if not validate_date(date_from):
