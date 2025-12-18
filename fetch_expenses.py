@@ -333,6 +333,7 @@ def get_google_sheets_service():
 def append_to_google_sheets(service, records: List[Dict], sheet_name: str = "Sheet1"):
     """
     Append invoice records to Google Sheets.
+    Only appends records if the combination of columns 4 & 5 (series + aa) doesn't already exist.
 
     Args:
         service: Google Sheets API service
@@ -343,23 +344,58 @@ def append_to_google_sheets(service, records: List[Dict], sheet_name: str = "She
         print("No records to append")
         return
 
-    # Prepare rows for Google Sheets
-    rows = []
-    for record in records:
-        rows.append([
-            record["issue_date"],
-            record["vat"],
-            record["name"],
-            record["series"],
-            record["aa"],
-            record["payment_methods"],
-            record["total_amount"]
-        ])
-
     try:
-        # Append data to sheet
+        # Read existing data from the sheet to check for duplicates
+        existing_data = service.spreadsheets().values().get(
+            spreadsheetId=GOOGLE_SPREADSHEET_ID,
+            range=f"{sheet_name}!A:G"
+        ).execute()
+
+        existing_rows = existing_data.get('values', [])
+
+        # Create a set of composite keys (series + aa) from existing data
+        # Columns 4 & 5 are indices 3 & 4 in the array (0-indexed)
+        existing_keys = set()
+        for row in existing_rows:
+            if len(row) >= 5:  # Ensure row has at least 5 columns
+                series = row[3] if len(row) > 3 else ""
+                aa = row[4] if len(row) > 4 else ""
+                composite_key = f"{series}|{aa}"
+                existing_keys.add(composite_key)
+
+        print(f"Found {len(existing_keys)} existing record(s) in spreadsheet")
+
+        # Filter out records that already exist
+        new_rows = []
+        skipped_count = 0
+        for record in records:
+            series = str(record["series"]) if record["series"] else ""
+            aa = str(record["aa"]) if record["aa"] else ""
+            composite_key = f"{series}|{aa}"
+
+            if composite_key not in existing_keys:
+                new_rows.append([
+                    record["issue_date"],
+                    record["vat"],
+                    record["name"],
+                    record["series"],
+                    record["aa"],
+                    record["payment_methods"],
+                    record["total_amount"]
+                ])
+            else:
+                skipped_count += 1
+
+        if skipped_count > 0:
+            print(f"Skipped {skipped_count} duplicate record(s)")
+
+        if not new_rows:
+            print("No new records to append (all records already exist)")
+            return
+
+        # Append only new data to sheet
         body = {
-            'values': rows
+            'values': new_rows
         }
         result = service.spreadsheets().values().append(
             spreadsheetId=GOOGLE_SPREADSHEET_ID,
@@ -371,10 +407,10 @@ def append_to_google_sheets(service, records: List[Dict], sheet_name: str = "She
 
         updates = result.get('updates', {})
         updated_rows = updates.get('updatedRows', 0)
-        print(f"\nSuccessfully appended {updated_rows} row(s) to Google Sheets")
+        print(f"\nSuccessfully appended {updated_rows} new row(s) to Google Sheets")
 
     except HttpError as e:
-        print(f"Error appending to Google Sheets: {e}", file=sys.stderr)
+        print(f"Error accessing Google Sheets: {e}", file=sys.stderr)
         sys.exit(1)
 
 
