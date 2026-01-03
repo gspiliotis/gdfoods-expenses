@@ -175,10 +175,12 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
         issue_date_elem = invoice_header.find("ns:issueDate", ns)
         series_elem = invoice_header.find("ns:series", ns)
         aa_elem = invoice_header.find("ns:aa", ns)
+        invoice_type_elem = invoice_header.find("ns:invoiceType", ns)
 
         issue_date = issue_date_elem.text.strip() if issue_date_elem is not None and issue_date_elem.text else ""
         series = series_elem.text.strip() if series_elem is not None and series_elem.text else ""
         aa = aa_elem.text.strip() if aa_elem is not None and aa_elem.text else ""
+        invoice_type = invoice_type_elem.text.strip() if invoice_type_elem is not None and invoice_type_elem.text else ""
 
         # Get payment methods
         payment_methods_list = []
@@ -202,6 +204,10 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
 
         # Create payment methods comma-separated string
         payment_methods_str = ", ".join(payment_methods_list) if payment_methods_list else ""
+
+        # Reverse amount for invoice types 5.1 and 5.2
+        if invoice_type in ["5.1", "5.2"]:
+            total_amount = -total_amount
 
         # Only add records with valid issue date
         if issue_date:
