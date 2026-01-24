@@ -104,18 +104,22 @@ def fetch_invoices(
         return ""
 
 
-def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optional[str]]:
+def parse_invoices(xml_content: str, vat_to_name: Optional[Dict[str, str]] = None) -> Tuple[List[Dict], Optional[str], Optional[str]]:
     """
     Parse XML response and extract invoice data.
 
     Args:
         xml_content: XML response as string
+        vat_to_name: Optional dictionary mapping VAT numbers to names (used as fallback when name is missing)
 
     Returns:
         Tuple of (list of invoice records, next_partition_key, next_row_key)
     """
     if not xml_content:
         return [], None, None
+
+    if vat_to_name is None:
+        vat_to_name = {}
 
     try:
         root = ET.fromstring(xml_content)
@@ -159,6 +163,10 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
 
         issuer_vat = issuer_vat_elem.text.strip() if issuer_vat_elem is not None and issuer_vat_elem.text else ""
         issuer_name = issuer_name_elem.text.strip() if issuer_name_elem is not None and issuer_name_elem.text else ""
+
+        # If issuer name is empty or missing, use the name from vat_to_name mapping
+        if not issuer_name and issuer_vat in vat_to_name:
+            issuer_name = vat_to_name[issuer_vat]
 
         # Get counterpart (receiver) information
         counterpart = invoice.find("ns:counterpart", ns)
@@ -225,20 +233,20 @@ def parse_invoices(xml_content: str) -> Tuple[List[Dict], Optional[str], Optiona
     return records, next_partition_key, next_row_key
 
 
-def fetch_all_invoices(date_from: str, date_to: str, vat_numbers: List[str]) -> List[Dict]:
+def fetch_all_invoices(date_from: str, date_to: str, vat_to_name: Dict[str, str]) -> List[Dict]:
     """
     Fetch all invoices for a date range and filter by VAT numbers locally.
 
     Args:
         date_from: Start date in YYYY-MM-DD format
         date_to: End date in YYYY-MM-DD format
-        vat_numbers: List of VAT numbers to filter by
+        vat_to_name: Dictionary mapping VAT numbers to names
 
     Returns:
         List of filtered invoice records
     """
-    # Convert VAT numbers list to a set for faster lookup and strip whitespace
-    vat_set = {vat.strip() for vat in vat_numbers if vat.strip()}
+    # Get VAT numbers as a set for faster lookup
+    vat_set = set(vat_to_name.keys())
 
     print(f"Fetching all invoices for date range (single API call)")
     print(f"Will filter results for {len(vat_set)} VAT number(s)")
@@ -260,7 +268,7 @@ def fetch_all_invoices(date_from: str, date_to: str, vat_numbers: List[str]) -> 
         if not xml_content:
             break
 
-        records, next_partition_key, next_row_key = parse_invoices(xml_content)
+        records, next_partition_key, next_row_key = parse_invoices(xml_content, vat_to_name)
         all_records.extend(records)
 
         print(f"  Page {page}: Fetched {len(records)} invoice(s)")
@@ -283,28 +291,35 @@ def fetch_all_invoices(date_from: str, date_to: str, vat_numbers: List[str]) -> 
     return filtered_records
 
 
-def read_vat_numbers(filename: str) -> List[str]:
+def read_vat_numbers(filename: str) -> Dict[str, str]:
     """
-    Read VAT numbers from file.
+    Read VAT numbers and names from file.
     Lines starting with # are treated as comments and ignored.
+    File format: VAT_NUMBER<whitespace>NAME (two columns separated by whitespace)
+    The second column (name) may contain Greek characters (UTF-8).
 
     Args:
-        filename: Path to file containing VAT numbers
+        filename: Path to file containing VAT numbers and names
 
     Returns:
-        List of VAT numbers
+        Dictionary mapping VAT numbers to names
     """
     try:
         with open(filename, 'r', encoding='utf-8') as f:
-            vat_numbers = []
+            vat_to_name = {}
             for line in f:
                 # Remove comments (anything after #)
                 line = line.split('#')[0].strip()
                 # Skip empty lines
                 if not line:
                     continue
-                vat_numbers.append(line)
-            return vat_numbers
+                # Split into VAT number and name (first whitespace-separated token is VAT, rest is name)
+                parts = line.split(None, 1)  # Split on whitespace, max 2 parts
+                if parts:
+                    vat_number = parts[0].strip()
+                    name = parts[1].strip() if len(parts) > 1 else ""
+                    vat_to_name[vat_number] = name
+            return vat_to_name
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found", file=sys.stderr)
         sys.exit(1)
@@ -490,17 +505,17 @@ def main():
         print(f"Error: Invalid end date '{date_to}'. Use YYYY-MM-DD format.", file=sys.stderr)
         sys.exit(1)
 
-    # Read VAT numbers
-    vat_numbers = read_vat_numbers(args.vat_file)
-    if not vat_numbers:
+    # Read VAT numbers and names
+    vat_to_name = read_vat_numbers(args.vat_file)
+    if not vat_to_name:
         print("Error: No VAT numbers found in file", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Found {len(vat_numbers)} VAT number(s) to process")
+    print(f"Found {len(vat_to_name)} VAT number(s) to process")
     print(f"Date range: {date_from} to {date_to}\n")
 
     # Fetch all invoices
-    records = fetch_all_invoices(date_from, date_to, vat_numbers)
+    records = fetch_all_invoices(date_from, date_to, vat_to_name)
 
     if not records:
         print("\nNo invoice data found")
