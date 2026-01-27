@@ -193,20 +193,50 @@ def parse_invoices(xml_content: str, vat_to_name: Optional[Dict[str, str]] = Non
         # Get payment methods
         payment_methods_list = []
         total_amount = 0.0
+        # Payment types that may have 0 amount and require calculating from line items
+        zero_amount_payment_types = {"6"}
+        needs_line_item_calculation = False
 
         payment_methods = invoice.find("ns:paymentMethods", ns)
         if payment_methods is not None:
             for payment_detail in payment_methods.findall("ns:paymentMethodDetails", ns):
                 # Get payment type
                 payment_type_elem = payment_detail.find("ns:type", ns)
+                payment_type = ""
                 if payment_type_elem is not None and payment_type_elem.text:
-                    payment_methods_list.append(payment_type_elem.text.strip())
+                    payment_type = payment_type_elem.text.strip()
+                    payment_methods_list.append(payment_type)
 
                 # Get payment amount
                 amount_elem = payment_detail.find("ns:amount", ns)
+                amount = 0.0
                 if amount_elem is not None and amount_elem.text:
                     try:
-                        total_amount += float(amount_elem.text)
+                        amount = float(amount_elem.text)
+                    except ValueError:
+                        pass
+
+                # Check if this payment type with 0 amount needs line item calculation
+                if payment_type in zero_amount_payment_types and amount == 0.0:
+                    needs_line_item_calculation = True
+                else:
+                    total_amount += amount
+
+        # If payment type requires it and amount was 0, calculate from line items
+        if needs_line_item_calculation and total_amount == 0.0:
+            for invoice_detail in invoice.findall("ns:invoiceDetails", ns):
+                net_value_elem = invoice_detail.find("ns:netValue", ns)
+                vat_amount_elem = invoice_detail.find("ns:vatAmount", ns)
+
+                if net_value_elem is not None and net_value_elem.text:
+                    try:
+                        total_amount += float(net_value_elem.text)
+                    except ValueError:
+                        pass
+
+                if vat_amount_elem is not None and vat_amount_elem.text:
+                    try:
+                        total_amount += float(vat_amount_elem.text)
                     except ValueError:
                         pass
 
@@ -214,7 +244,7 @@ def parse_invoices(xml_content: str, vat_to_name: Optional[Dict[str, str]] = Non
         payment_methods_str = ", ".join(payment_methods_list) if payment_methods_list else ""
 
         # Reverse amount for invoice types 5.1 and 5.2
-        if invoice_type in ["5.1", "5.2"]:
+        if invoice_type in ["5", "5.1", "5.2"]:
             total_amount = -total_amount
 
         # Only add records with valid issue date
