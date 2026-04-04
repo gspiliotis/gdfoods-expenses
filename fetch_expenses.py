@@ -263,20 +263,21 @@ def parse_invoices(xml_content: str, vat_to_name: Optional[Dict[str, str]] = Non
     return records, next_partition_key, next_row_key
 
 
-def fetch_all_invoices(date_from: str, date_to: str, vat_to_name: Optional[Dict[str, str]] = None) -> List[Dict]:
+def fetch_all_invoices(date_from: str, date_to: str, vat_to_name: Optional[Dict[str, str]] = None, filter_by_vat: bool = True) -> List[Dict]:
     """
     Fetch all invoices for a date range and optionally filter by VAT numbers locally.
 
     Args:
         date_from: Start date in YYYY-MM-DD format
         date_to: End date in YYYY-MM-DD format
-        vat_to_name: Optional dictionary mapping VAT numbers to names. If None or empty, no filtering is applied.
+        vat_to_name: Optional dictionary mapping VAT numbers to names (used for name lookup and optionally filtering).
+        filter_by_vat: If True, filter results by VAT numbers in vat_to_name. If False, return all invoices.
 
     Returns:
-        List of invoice records (filtered if vat_to_name is provided)
+        List of invoice records (filtered if filter_by_vat is True and vat_to_name is provided)
     """
     # Get VAT numbers as a set for faster lookup
-    vat_set = set(vat_to_name.keys()) if vat_to_name else set()
+    vat_set = set(vat_to_name.keys()) if vat_to_name and filter_by_vat else set()
 
     print(f"Fetching all invoices for date range (single API call)")
     if vat_set:
@@ -505,7 +506,12 @@ def main():
     )
     parser.add_argument(
         "--vat-file",
-        help="File containing VAT numbers. If not specified, all invoices are returned unfiltered."
+        help="File containing VAT numbers and names. Used for VAT-to-name lookup, and for filtering unless --all-invoices is specified."
+    )
+    parser.add_argument(
+        "--all-invoices",
+        action="store_true",
+        help="Fetch all invoices without filtering by VAT numbers. VAT file (if provided) is still used for name lookup."
     )
     parser.add_argument(
         "--sheet-name",
@@ -541,6 +547,11 @@ def main():
         print(f"Error: Invalid end date '{date_to}'. Use YYYY-MM-DD format.", file=sys.stderr)
         sys.exit(1)
 
+    # Validate: require either --vat-file or --all-invoices
+    if not args.vat_file and not args.all_invoices:
+        print("Error: either --vat-file or --all-invoices must be specified", file=sys.stderr)
+        sys.exit(1)
+
     # Read VAT numbers and names (if file specified)
     vat_to_name = None
     if args.vat_file:
@@ -548,14 +559,15 @@ def main():
         if not vat_to_name:
             print("Error: No VAT numbers found in file", file=sys.stderr)
             sys.exit(1)
-        print(f"Found {len(vat_to_name)} VAT number(s) to process")
-    else:
-        print("No VAT file specified - fetching all invoices unfiltered")
+        if args.all_invoices:
+            print(f"Found {len(vat_to_name)} VAT number(s) for name lookup (no filtering)")
+        else:
+            print(f"Found {len(vat_to_name)} VAT number(s) to filter by")
 
     print(f"Date range: {date_from} to {date_to}\n")
 
     # Fetch all invoices
-    records = fetch_all_invoices(date_from, date_to, vat_to_name)
+    records = fetch_all_invoices(date_from, date_to, vat_to_name, filter_by_vat=not args.all_invoices)
 
     if not records:
         print("\nNo invoice data found")
